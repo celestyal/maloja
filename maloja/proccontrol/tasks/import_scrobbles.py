@@ -68,6 +68,11 @@ def import_scrobbles(inputf):
 		typeid, typedesc = "lastfm", "Last.fm (ghan export)"
 		importfunc = parse_lastfm_ghan
 
+	# scrobbles_log_YYYY_MM_DD_HH_SS.jsonl (Pano Scrobbler JSONL)
+	elif re.match(r"scrobbles_log_[0-9]{4}_[0-9]{1,2}_[0-9]{1,2}_[0-9]{1,2}_[0-9]{2}\.jsonl", filename):
+		typeid, typedesc = "panoscrobblerjsonl", "PanoScrobbler JSONL"
+		importfunc = parse_panoscrobbler_jsonl
+
 	elif re.match(r".*\.json",filename):
 		try:
 			with open(filename,'r') as fd:
@@ -478,6 +483,47 @@ def parse_rockbox(inputf):
 				except Exception as e:
 					yield ('FAIL',None,f"{line} could not be parsed. Scrobble not imported. ({repr(e)})")
 					continue
+
+
+def parse_panoscrobbler_jsonl(inputf):
+	with open(inputf) as inputfd:
+		data = [json.loads(line) for line in inputfd]
+
+		for entry in data:
+			try:
+				if entry['event'] == 'scrobble':
+					artist = re.split('[,&]', entry['artist'])
+					title = entry['track']
+					album = entry['album']
+					album_artists = re.split('[,&]', entry['albumArtist'])
+					played = entry['durationMs']
+					timestamp = int(entry['timeMs'] / 1000)
+					
+					# some scrobbles can have a None listen duration, so a check
+					# should be made
+					if played is not None:
+						played = int(played / 1000)
+						status = 'CONFIDENT_IMPORT'
+						msg = ''
+					else:
+						status = 'UNCERTAIN_IMPORT'
+						msg = f"{entry} has no listen duration. Importing anyway."
+
+
+					yield(status,{
+							'track_title':title,
+							'track_artists': artist,
+							'track_length': None,
+							'album_name': album,
+							'album_artists': album_artists,
+							'scrobble_time': timestamp,
+							'scrobble_duration': played
+							},msg)
+				else:
+					yield('FAIL',None,f"{entry} is not a scrobble. Skipping.")
+			except Exception as e:
+				yield('FAIL',None,f"{entry} could not be parsed. Scrobble not imported. ({repr(e)})")
+				continue
 
 
 def parse_maloja(inputf):
